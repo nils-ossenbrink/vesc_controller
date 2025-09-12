@@ -1,18 +1,30 @@
 #include <Arduino.h>
+#include "VescCan.h"
 
-// put function declarations here:
-int myFunction(int, int);
+#define CAN_TX GPIO_NUM_21
+#define CAN_RX GPIO_NUM_20
+
+VescCan vesc(CAN_TX, CAN_RX, 500000);
 
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  Serial.begin(115200);
+  if (!vesc.isOpen()) {
+    Serial.println("❌ Fehler beim Starten von CAN");
+    while (true);
+  }
+  Serial.println("✅ CAN bereit");
+
+  // Heartbeat automatisch alle 100ms senden
+  vesc.startHeartbeatTask(1, 100);
+
+  delay(1000);
+  Serial.println("➡️ Sende Duty 0.2");
+  vesc.setDuty(1, 0.2f);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+  // andere Steuerbefehle nach Bedarf
+  delay(2000);
+  Serial.println("➡️ Sende RPM 1500");
+  vesc.setRpm(1, 1500);
 }
