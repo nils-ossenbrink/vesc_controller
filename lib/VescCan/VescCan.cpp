@@ -72,6 +72,11 @@ bool VescCan::setCurrent(uint8_t controller_id, float current) {
 }
 
 bool VescCan::setRpm(uint8_t controller_id, int32_t rpm) {
+    rpm_ = rpm;
+    return true;
+}
+
+bool VescCan::sendRpm(uint8_t controller_id, int32_t rpm) {
     uint8_t buf[4];
     appendInt32BE(buf, rpm);
     uint32_t eid = (CAN_PACKET_SET_RPM << 8) | controller_id;
@@ -83,7 +88,8 @@ bool VescCan::sendHeartbeat(uint8_t controller_id, int32_t state, int32_t fault)
     appendInt32BE(buf, state);
     appendInt32BE(buf+4, fault);
     uint32_t eid = (CAN_PACKET_HEARTBEAT << 8) | controller_id;
-    return sendCanFrame(eid, buf, 8);
+    //sendCanFrame(eid, buf, 8);
+    return VescCan::sendRpm(controller_id, rpm_);
 }
 
 // -------- Hintergrund-Heartbeat --------
