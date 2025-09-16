@@ -53,7 +53,7 @@ void cmd_set_rpm(SerialCommands* sender)
 
 	int rpm = atoi(rpm_str);
 	
-  vesc.setRpm(1, rpm);
+  vesc.sendRpm(1, rpm);
 
 	sender->GetSerial()->print("RPM set to ");
 	sender->GetSerial()->print(rpm);
@@ -64,7 +64,7 @@ void cmd_set_rpm(SerialCommands* sender)
 // 0       -> 0
 // (0,1]   -> [1000,4000]
 double mapSplit(double x) {
-  if (x == 0.0) return 0.0;
+  if (x > -0.1 && x < 0.1) return 0.0;
   return std::copysign(1000.0 + std::fabs(x) * 3000.0, x);
 }
 
@@ -82,7 +82,7 @@ void setup() {
   web.begin();
 
   // Heartbeat automatisch alle 100ms senden
-  vesc.startHeartbeatTask(1, 500);
+  vesc.startHeartbeatTask(1, 50);
 
   delay(1000);
   
@@ -92,25 +92,48 @@ void setup() {
   Serial.println("Ready ...!");
 }
 
+const int f_max = 4000;     // Maximalwert
+const int steps = 100;      // Auflösung
+const int duration_ms = 2000; // Zeit für eine Richtung (1 Sekunde)
+
 void loop() {
   static unsigned long lastTime = 0;
   unsigned long now = millis();
 
   serial_commands_.ReadSerial();
 
-  web.handle(); // DNS für Captive Portal
+  //web.handle(); // DNS für Captive Portal
 
-  if (now - lastTime >= 100) {  // alle 100ms
-      lastTime = now;
-
-      float val = js.getValue();
-      float volt = js.getVoltage();
-
-      if (isnan(val) || isnan(volt)) {
-          //Serial.println("Joystick noch nicht kalibriert!");
-      } else {
-          Serial.printf("Normiert: %.2f   Spannung: %.2f V\n", val, volt);
-          vesc.setRpm(1, mapSplit(val));
-      }
+  // Aufwärts: 0 → 4000
+  for (int n = 0; n <= steps; n++) {
+    float t = (float)n / steps;
+    int value = (int)(t * f_max);
+    Serial.println(value);
+    delay(duration_ms / steps);
+    vesc.setControl(1, VescControlType::RPM, value);
   }
+
+  // Abwärts: 4000 → 0
+  for (int n = 0; n <= steps; n++) {
+    float t = (float)n / steps;
+    int value = (int)((1.0 - t) * f_max);
+    Serial.println(value);
+    delay(duration_ms / steps);
+    vesc.setControl(1, VescControlType::RPM, value);
+  }
+
+  // if (now - lastTime >= 100) {  // alle 100ms
+  //     lastTime = now;
+
+  //     float val = js.getValue();
+  //     float volt = js.getVoltage();
+
+  //     if (isnan(val) || isnan(volt)) {
+  //         //Serial.println("Joystick noch nicht kalibriert!");
+  //     } else {
+  //         int rpm =  mapSplit(val);
+  //         Serial.printf("Normiert: %.2f   Spannung: %.2f V RPM: %d\n", val, volt, rpm);
+  //         vesc.setRpm(1, rpm);
+  //     }
+  // }
 }

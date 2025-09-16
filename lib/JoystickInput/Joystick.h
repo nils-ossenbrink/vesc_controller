@@ -14,7 +14,7 @@ private:
     int index = 0;
 
     float avgValue = 0;
-
+    float simulatedValue = NAN; // -1.0 … 1.0, NaN = echte Messung
     int minVal=-1, maxVal=-1, center=-1;
 
     TaskHandle_t taskHandle = nullptr;
@@ -38,6 +38,14 @@ public:
 
     /** @brief Startet den Hintergrundtask für kontinuierliche Messungen */
     void begin();
+
+    void setSimulatedValue(float val) {
+        if(val < -1.0f) val = -1.0f;
+        if(val > 1.0f) val = 1.0f;
+        simulatedValue = val;
+    }
+
+    void clearSimulation() { simulatedValue = NAN; }
 
     /**
      * @brief Liefert den geglätteten, normierten Joystick-Wert (-1.0 bis +1.0)
@@ -65,6 +73,11 @@ public:
 
     /** @brief Prüft, ob alle Kalibrierungsschritte abgeschlossen sind */
     bool isCalibrated();
+
+    bool isCalibratedCenter() { return minVal!=-1; }
+    bool isCalibratedMin() { return maxVal!=-1; }
+    bool isCalibratedMax() { return center!=-1; }
+
 };
 
 #endif

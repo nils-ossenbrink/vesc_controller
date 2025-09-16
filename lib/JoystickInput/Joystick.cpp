@@ -45,7 +45,7 @@ void Joystick::readerTask() {
 
         avgValue = mapToRange(avgVoltage);
 
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -86,11 +86,14 @@ void Joystick::begin() {
 }
 
 float Joystick::getValue() {
+    if(!isnan(simulatedValue)) return simulatedValue;
     if (!isCalibrated()) return  NAN;  // ungültiger Wert, solange nicht kalibriert
     return avgValue;
 }
 
 float Joystick::getVoltage() {
+    if(!isnan(simulatedValue)) return 1.65 + simulatedValue*1.65;
+
     if (!isCalibrated()) return  NAN;  // ungültiger Wert, solange nicht kalibriert
 
     float sum = 0;

@@ -55,7 +55,13 @@ bool VescCan::sendCanFrame(uint32_t extended_id, const uint8_t *data, uint8_t le
     return (twai_transmit(&msg, pdMS_TO_TICKS(50)) == ESP_OK);
 }
 
-bool VescCan::setDuty(uint8_t controller_id, float duty) {
+bool VescCan::setControl(uint8_t controller_id, VescControlType type, float value) {
+    type_ = type;
+    value_ = value_;
+    return true;
+}
+
+bool VescCan::sendDuty(uint8_t controller_id, float duty) {
     int32_t v = (int32_t)(duty * 100000.0f);
     uint8_t buf[4];
     appendInt32BE(buf, v);
@@ -63,17 +69,12 @@ bool VescCan::setDuty(uint8_t controller_id, float duty) {
     return sendCanFrame(eid, buf, 4);
 }
 
-bool VescCan::setCurrent(uint8_t controller_id, float current) {
+bool VescCan::sendCurrent(uint8_t controller_id, float current) {
     int32_t v = (int32_t)(current * 1000.0f);
     uint8_t buf[4];
     appendInt32BE(buf, v);
     uint32_t eid = (CAN_PACKET_SET_CURRENT << 8) | controller_id;
     return sendCanFrame(eid, buf, 4);
-}
-
-bool VescCan::setRpm(uint8_t controller_id, int32_t rpm) {
-    rpm_ = rpm;
-    return true;
 }
 
 bool VescCan::sendRpm(uint8_t controller_id, int32_t rpm) {
@@ -89,7 +90,16 @@ bool VescCan::sendHeartbeat(uint8_t controller_id, int32_t state, int32_t fault)
     appendInt32BE(buf+4, fault);
     uint32_t eid = (CAN_PACKET_HEARTBEAT << 8) | controller_id;
     //sendCanFrame(eid, buf, 8);
-    return VescCan::sendRpm(controller_id, rpm_);
+    switch (type_) {
+        case VescControlType::DUTY:
+            return sendDuty(controller_id, value_);
+        case VescControlType::CURRENT:
+            return sendCurrent(controller_id, value_);
+        case VescControlType::RPM:
+            return sendRpm(controller_id, static_cast<int32_t>(value_));
+        default:
+            return false;
+    }
 }
 
 // -------- Hintergrund-Heartbeat --------

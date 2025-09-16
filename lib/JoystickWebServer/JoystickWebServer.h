@@ -49,14 +49,32 @@ public:
             req->send(200, "text/plain", "Kalibrierung zurückgesetzt!");
         });
 
-        server.on("/values", HTTP_GET,[this](AsyncWebServerRequest* req){
-            String json;
-            if(js.isCalibrated()){
-                json = "{\"norm\":\""+String(js.getValue(),2)+"\",\"volt\":\""+String(js.getVoltage(),2)+"\"}";
+        server.on("/values", HTTP_GET, [this](AsyncWebServerRequest *request){
+            float norm = js.getValue();       // -1.0 … 1.0 (echter oder simuliert)
+            float volt = js.getVoltage();     // Spannung in Volt
+            bool centerSet = js.isCalibratedCenter(); // optional eigene Getter
+            bool minSet    = js.isCalibratedMin();
+            bool maxSet    = js.isCalibratedMax();
+
+            String json = "{";
+            json += "\"norm\":" + String(norm, 2) + ",";
+            json += "\"volt\":" + String(volt, 2) + ",";
+            json += "\"centerSet\":" + String(centerSet ? "true":"false") + ",";
+            json += "\"minSet\":" + String(minSet ? "true":"false") + ",";
+            json += "\"maxSet\":" + String(maxSet ? "true":"false");
+            json += "}";
+
+            request->send(200, "application/json", json);
+        });
+
+        server.on("/simulate", HTTP_GET, [this](AsyncWebServerRequest* req){
+            if(req->hasParam("val")){
+                float v = req->getParam("val")->value().toFloat(); // -1.0 … 1.0
+                js.setSimulatedValue(v);
+                req->send(200,"text/plain","Simulationswert gesetzt");
             } else {
-                json = "{\"norm\":\"NaN\",\"volt\":\"NaN\"}";
+                req->send(400,"text/plain","Kein Wert übergeben");
             }
-            req->send(200,"application/json",json);
         });
 
         server.begin();
@@ -74,8 +92,7 @@ private:
     DNSServer dnsServer;
 
     String buildPage(){
- String statusText = js.isCalibrated() ? "Kalibriert ✅" : "Nicht kalibriert ❌";
-    String html = R"rawliteral(
+     String html = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -97,7 +114,7 @@ main{flex:1 0 auto;}
 <body>
 <nav>
   <div class="nav-wrapper teal darken-2">
-    <a href='#' class='brand-logo center'>Bugstrahlruder</a>
+    <a href='#' class='brand-logo center'>ESP32 Joystick</a>
   </div>
 </nav>
 
@@ -106,34 +123,38 @@ main{flex:1 0 auto;}
 <div class='card center-card'>
   <div class='card-content'>
     <span class='card-title'>Kalibrierung & Live-Werte</span>
-    <p>Status: <span id='statusText'>)" + statusText + R"rawliteral(</span></p>
+
+    <!-- Statusanzeigen -->
+    <p>Status Center: <span id='statusCenter'>—</span></p>
+    <p>Status Min: <span id='statusMin'>—</span></p>
+    <p>Status Max: <span id='statusMax'>—</span></p>
+
+    <!-- Normierte Werte -->
     <p id='normText'>Normiert: —</p>
     <p id='voltText'>Spannung: — V</p>
+
+    <!-- Live Balken -->
     <div id='bar'>
       <div id='leftFill'></div>
       <div id='rightFill'></div>
       <div id='centerLine'></div>
     </div>
 
-    <!-- Erste Zeile: Min, Mitte, Max -->
+    <!-- Buttons erste Zeile: Min, Mitte, Max -->
     <div class="row" style="display:flex; justify-content:space-between; gap:8px; margin-top:16px;">
-      <a id="btnMin" class="waves-effect waves-light btn grey darken-1" style="flex:1;">
-        <i class="material-icons arrow_back"></i>Min
-      </a>
-      <a id="btnCenter" class="waves-effect waves-light btn grey darken-1" style="flex:1;">
-        <i class="material-icons lens"></i>Mitte
-      </a>
-      <a id="btnMax" class="waves-effect waves-light btn grey darken-1" style="flex:1;">
-        <i class="material-icons arrow_forward"></i>Max
-      </a>
+      <a id="btnMin" class="waves-effect waves-light btn red darken-1" style="flex:1;">Min</a>
+      <a id="btnCenter" class="waves-effect waves-light btn blue darken-1" style="flex:1;">Mitte</a>
+      <a id="btnMax" class="waves-effect waves-light btn green darken-1" style="flex:1;">Max</a>
     </div>
 
-    <!-- Zweite Zeile: Reset -->
+    <!-- Reset zweite Zeile -->
     <div class="row" style="display:flex; justify-content:center; margin-top:8px;">
-      <a id="btnReset" class="waves-effect waves-light btn grey darken-1" style="flex:0 0 40%;">
-        <i class="material-icons">Reset</i>Reset
-      </a>
+      <a id="btnReset" class="waves-effect waves-light btn orange darken-1" style="flex:0 0 40%;">Reset</a>
     </div>
+
+    <!-- Joystick-Simulator -->
+    <p>Joystick Simulator:</p>
+    <input type="range" id="simSlider" min="-100" max="100" value="0" step="1">
 
   </div>
 </div>
@@ -141,19 +162,35 @@ main{flex:1 0 auto;}
 </main>
 
 <footer class='page-footer teal lighten-2'>
-  <div class='container'>Bugstrahlruder Joystick Kalibrierung</div>
+  <div class='container'>ESP32 Joystick Kalibrierung</div>
 </footer>
 
 <script src="/js/materialize.min.js"></script>
 <script>
-// Live Werte aktualisieren
-async function updateValues(){
+// Statusanzeige aktualisieren
+function updateCalibrationStatus(centerSet, minSet, maxSet){
+    document.getElementById('statusCenter').innerText = centerSet ? '✅' : '❌';
+    document.getElementById('statusMin').innerText = minSet ? '✅' : '❌';
+    document.getElementById('statusMax').innerText = maxSet ? '✅' : '❌';
+}
+
+// Live-Werte aktualisieren (real oder Simulation)
+async function updateValues(simValue){
     try{
-        const r = await fetch('/values');
-        const d = await r.json();
-        const norm = parseFloat(d.norm), volt = parseFloat(d.volt);
+        let norm, volt;
+        if(simValue !== undefined){
+            // Simulation über Slider (-1.0 … 1.0)
+            norm = simValue;
+            volt = 1.65 + norm*1.65;
+        } else {
+            const r = await fetch('/values');
+            const d = await r.json();
+            norm = parseFloat(d.norm);
+            volt = parseFloat(d.volt);
+            updateCalibrationStatus(d.centerSet, d.minSet, d.maxSet);
+        }
+
         if(!isNaN(norm)){
-            document.getElementById('statusText').innerText='Kalibriert ✅';
             document.getElementById('normText').innerText='Normiert: '+norm.toFixed(2);
             document.getElementById('voltText').innerText='Spannung: '+volt.toFixed(2)+' V';
             if(norm<0){
@@ -164,20 +201,25 @@ async function updateValues(){
                 document.getElementById('leftFill').style.width='0%';
             }
         } else {
-            document.getElementById('statusText').innerText='Nicht kalibriert ❌';
             document.getElementById('normText').innerText='Normiert: —';
             document.getElementById('voltText').innerText='Spannung: —';
             document.getElementById('leftFill').style.width='0%';
             document.getElementById('rightFill').style.width='0%';
         }
     } catch(e){
-        document.getElementById('statusText').innerText='Fehler ❌';
+        console.log(e);
     }
 }
 
-setInterval(updateValues,500);
+// Slider Event → simulierten Wert an ESP senden
+document.getElementById('simSlider').addEventListener('input', async (e)=>{
+    const raw = parseInt(e.target.value);
+    const normValue = raw / 100.0; // -1.0 bis 1.0
+    await fetch('/simulate?val=' + normValue);
+    updateValues(normValue);
+});
 
-// Kalibrierung Buttons mit Toast Meldungen
+// Kalibrierung Buttons
 document.addEventListener("DOMContentLoaded",()=>{
     document.getElementById("btnCenter").onclick = async () => {
         const res = await fetch("/calibrateCenter");
@@ -203,6 +245,9 @@ document.addEventListener("DOMContentLoaded",()=>{
         M.toast({html:text, classes:"orange"});
         updateValues();
     };
+
+    // Initialwerte laden
+    updateValues();
 });
 </script>
 </body>
