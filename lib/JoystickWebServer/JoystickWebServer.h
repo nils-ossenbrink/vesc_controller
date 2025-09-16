@@ -1,6 +1,6 @@
 #pragma once
 #include <ESPAsyncWebServer.h>
-#include <DNSServer.h>
+#include <WiFi.h>
 #include <LittleFS.h>
 #include "Joystick.h"
 
@@ -15,10 +15,13 @@ public:
             return;
         }
 
+        esp_log_level_set("wifi", ESP_LOG_VERBOSE);
+        WiFi.mode(WIFI_AP);
         WiFi.softAPConfig(apIP, apIP, IPAddress(255,255,255,0));
         WiFi.softAP(wifiSSID, wifiPass);
-        dnsServer.start(53,"*",apIP);
 
+        Serial.println("AP gestartet. IP: " + WiFi.softAPIP().toString());
+       
         // Statische Dateien
         server.serveStatic("/css/materialize.min.css", LittleFS, "/css/materialize.min.css");
         server.serveStatic("/js/materialize.min.js", LittleFS, "/js/materialize.min.js");
@@ -63,15 +66,12 @@ public:
         Serial.println("Webserver gestartet.");
     }
 
-    void handle() { dnsServer.processNextRequest(); }
-
 private:
     Joystick& js;
     const char* wifiSSID;
     const char* wifiPass;
     IPAddress apIP;
     AsyncWebServer server;
-    DNSServer dnsServer;
 
     String buildPage(){
  String statusText = js.isCalibrated() ? "Kalibriert ✅" : "Nicht kalibriert ❌";

@@ -98,7 +98,7 @@ void loop() {
 
   serial_commands_.ReadSerial();
 
-  web.handle(); // DNS für Captive Portal
+  //web.handle(); // DNS für Captive Portal
 
   if (now - lastTime >= 100) {  // alle 100ms
       lastTime = now;
