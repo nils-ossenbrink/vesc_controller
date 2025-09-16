@@ -1,4 +1,8 @@
+#include <LittleFS.h>
+#include <Preferences.h>
+
 #include "Joystick.h"
+
 
 Joystick::Joystick(int pin, float vRef, float deadzone)
     : pin(pin), vRef(vRef), deadzone(deadzone) {
@@ -14,10 +18,10 @@ float Joystick::readVoltage(int pin) {
 
 float Joystick::mapToRange(float voltage) {
     float value;
-    if (voltage >= centerV) {
-        value = (voltage - centerV) / (maxV - centerV);
+    if (voltage >= center) {
+        value = (voltage - center) / (maxVal - center);
     } else {
-        value = (voltage - centerV) / (centerV - minV);
+        value = (voltage - center) / (center - minVal);
     }
 
     if (value > 1.0f) value = 1.0f;
@@ -54,6 +58,22 @@ void Joystick::begin() {
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
 
+    // LittleFS mit Formatierung, falls fehlerhaft
+    if(!LittleFS.begin(true)){
+        Serial.println("LittleFS Fehler beim Mounten!");
+    }
+
+    // Preferences testen
+    Preferences prefs;
+    if(prefs.begin("joystick", false)){
+        Serial.println("Preferences geöffnet!");
+        prefs.end();
+    } else {
+        Serial.println("Preferences öffnen fehlgeschlagen!");
+    }
+    
+    loadCalibration();
+    
     xTaskCreatePinnedToCore(
         taskWrapper,
         "JoystickReader",
@@ -80,20 +100,64 @@ float Joystick::getVoltage() {
 
 // --- Kalibrierung ---
 void Joystick::calibrateCenter() {
-    centerV = getVoltage();
-    calibratedCenter = true;
+    center = getVoltage();
+    if (isCalibrated()) { saveCalibration(); }
 }
 
-void Joystick::calibrateMin() {
-    minV = getVoltage();
-    calibratedMin = true;
+bool Joystick::calibrateMin() {
+    minVal = getVoltage();
+    if (minVal >= center - 0.5 || center == -1) {
+        minVal = -1;
+        return false;
+    }
+    if (isCalibrated()) { saveCalibration(); }
+        return true;
 }
 
-void Joystick::calibrateMax() {
-    maxV = getVoltage();
-    calibratedMax = true;
+bool Joystick::calibrateMax() {
+    maxVal = getVoltage();
+    if (maxVal <= center + 0.5 || center == -1) {
+        maxVal = -1;
+        return false;
+    }
+    if (isCalibrated()) { saveCalibration(); }
+    return true;
+}
+
+bool Joystick::resetCalibration() {
+    minVal = -1;
+    maxVal = -1;
+    center = -1;
+    
+    Preferences prefs;
+    prefs.begin("joystick", false);
+    prefs.remove("min");
+    prefs.remove("max");
+    prefs.remove("center");
+    prefs.end();
+
+    return true;
 }
 
 bool Joystick::isCalibrated() {
-    return calibratedCenter && calibratedMin && calibratedMax;
+    return minVal!=-1 && maxVal!=-1 && center!=-1;
 }
+
+void Joystick::saveCalibration() {
+    Preferences prefs;
+    prefs.begin("joystick", false);
+    prefs.putInt("min", minVal);
+    prefs.putInt("max", maxVal);
+    prefs.putInt("center", center);
+    prefs.end();
+}
+
+void Joystick::loadCalibration() {
+    Preferences prefs;
+    prefs.begin("joystick", true);
+    minVal = prefs.getInt("min",-1);
+    maxVal = prefs.getInt("max",-1);
+    center = prefs.getInt("center",-1);
+    prefs.end();
+}
+

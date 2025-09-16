@@ -1,15 +1,32 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+
 #include "VescCan.h"
 #include "SerialCommands.h"
 #include "Joystick.h"
-#include <esp32_can.h>
+#include "JoystickWebServer.h"
 
 #define CAN_TX GPIO_NUM_14
 #define CAN_RX GPIO_NUM_13
 
+#define JOYSTICK_PIN GPIO_NUM_10
+
+#define MIN_RPM 1000
+#define MAX_RPM 4000
+
+// WLAN-Daten (anpassen!)
+const char* ssid = "ESP32_JOYSTICK";
+const char* password = "12345678";
+
+Joystick js(JOYSTICK_PIN);
+
+AsyncWebServer server(80);
+JoystickWebServer web(js, ssid,password);
+
 VescCan vesc(CAN_TX, CAN_RX, 500000);
 
-Joystick js(34);
+
 
 char serial_command_buffer_[32];
 SerialCommands serial_commands_(&Serial, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
@@ -20,20 +37,6 @@ void cmd_unrecognized(SerialCommands* sender, const char* cmd)
 	sender->GetSerial()->print("Unrecognized command [");
 	sender->GetSerial()->print(cmd);
 	sender->GetSerial()->println("]");
-}
-
-void printFrame(CAN_FRAME *message)
-{
-  Serial.print(message->id, HEX);
-  if (message->extended) Serial.print(" X ");
-  else Serial.print(" S ");   
-  Serial.print(message->length, DEC);
-  Serial.print(" ");
-  for (int i = 0; i < message->length; i++) {
-    Serial.print(message->data.byte[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
 }
 
 //expects one single parameter
@@ -56,6 +59,15 @@ void cmd_set_rpm(SerialCommands* sender)
 	sender->GetSerial()->print(rpm);
 }
 
+// Mapping-Funktion:
+// [-1,0)  -> [-4000,-1000]
+// 0       -> 0
+// (0,1]   -> [1000,4000]
+double mapSplit(double x) {
+  if (x == 0.0) return 0.0;
+  return std::copysign(1000.0 + std::fabs(x) * 3000.0, x);
+}
+
 SerialCommand cmd_set_rpm_("rpm", cmd_set_rpm);
 
 void setup() {
@@ -67,7 +79,8 @@ void setup() {
   Serial.println("✅ CAN bereit");
 
   js.begin();
-  
+  web.begin();
+
   // Heartbeat automatisch alle 100ms senden
   vesc.startHeartbeatTask(1, 500);
 
@@ -85,7 +98,8 @@ void loop() {
 
   serial_commands_.ReadSerial();
 
-  
+  web.handle(); // DNS für Captive Portal
+
   if (now - lastTime >= 100) {  // alle 100ms
       lastTime = now;
 
@@ -93,9 +107,10 @@ void loop() {
       float volt = js.getVoltage();
 
       if (isnan(val) || isnan(volt)) {
-          Serial.println("Joystick noch nicht kalibriert!");
+          //Serial.println("Joystick noch nicht kalibriert!");
       } else {
           Serial.printf("Normiert: %.2f   Spannung: %.2f V\n", val, volt);
+          vesc.setRpm(1, mapSplit(val));
       }
   }
 }

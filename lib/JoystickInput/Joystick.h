@@ -15,14 +15,7 @@ private:
 
     float avgValue = 0;
 
-    // Kalibrierungswerte
-    float centerV = 2.5;
-    float minV = 0.5;
-    float maxV = 4.5;
-
-    bool calibratedCenter = false;
-    bool calibratedMin = false;
-    bool calibratedMax = false;
+    int minVal=-1, maxVal=-1, center=-1;
 
     TaskHandle_t taskHandle = nullptr;
 
@@ -30,6 +23,9 @@ private:
     float mapToRange(float voltage);
     void readerTask();
     static void taskWrapper(void* param);
+
+    void saveCalibration();
+    void loadCalibration();
 
 public:
     /**
@@ -59,10 +55,13 @@ public:
     void calibrateCenter();
 
     /** @brief Kalibriert die minimale Endlage (-1.0) */
-    void calibrateMin();
+    bool calibrateMin();
 
     /** @brief Kalibriert die maximale Endlage (+1.0) */
-    void calibrateMax();
+    bool calibrateMax();
+
+    /** @brief Setzt die Kalibrierung zurück */
+    bool resetCalibration();
 
     /** @brief Prüft, ob alle Kalibrierungsschritte abgeschlossen sind */
     bool isCalibrated();
